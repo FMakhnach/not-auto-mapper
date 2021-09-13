@@ -2,10 +2,10 @@
 using JetBrains.ReSharper.Psi;
 using JetBrains.ReSharper.Psi.CSharp.Tree;
 using JetBrains.ReSharper.Psi.Util;
-using ReSharperPlugin.NotAutoMapper.Components.EnumMapper;
-using ReSharperPlugin.NotAutoMapper.Mapping;
+using ReSharperPlugin.NotAutoMapper.EnumMapper;
+using ReSharperPlugin.NotAutoMapper.ObjectMapper;
 
-namespace ReSharperPlugin.NotAutoMapper.Components
+namespace ReSharperPlugin.NotAutoMapper.Common
 {
     [ElementProblemAnalyzer(
         typeof(IMethodDeclaration),
@@ -23,6 +23,11 @@ namespace ReSharperPlugin.NotAutoMapper.Components
                 {
                     consumer.AddHighlighting(new CanGenerateEnumMapperHighlighting(element));
                 }
+
+                if (CanGenerateObjectMapperMethod(element))
+                {
+                    consumer.AddHighlighting(new CanGenerateObjectMapperHighlighting(element));
+                }
             }
         }
 
@@ -32,20 +37,25 @@ namespace ReSharperPlugin.NotAutoMapper.Components
             return (body is null || body.Statements.IsEmpty)
                    && methodDeclaration.GetCodeBody().ExpressionBody is null
                    && methodDeclaration.IsExtensionMethod
+                   && methodDeclaration.ParameterDeclarations.Count > 0
                    && methodDeclaration.DeclaredElement != null
                    && !methodDeclaration.DeclaredElement.ReturnType.IsVoid();
         }
 
         private static bool CanGenerateEnumMapperMethod(IMethodDeclaration methodDeclaration)
         {
-            if (methodDeclaration.ParameterDeclarations.Count != 1 || methodDeclaration.DeclaredElement is null)
-            {
-                return false;
-            }
-
             var parameterType = methodDeclaration.ParameterDeclarations[0].Type;
-            var returnType = methodDeclaration.DeclaredElement.ReturnType;
+            var returnType = methodDeclaration.DeclaredElement!.ReturnType;
+
             return parameterType.IsEnumType() && returnType.IsEnumType();
+        }
+
+        private static bool CanGenerateObjectMapperMethod(IMethodDeclaration methodDeclaration)
+        {
+            var parameterType = methodDeclaration.ParameterDeclarations[0].Type;
+            var returnType = methodDeclaration.DeclaredElement!.ReturnType;
+
+            return !parameterType.IsEnumType() && !returnType.IsEnumType();
         }
     }
 }

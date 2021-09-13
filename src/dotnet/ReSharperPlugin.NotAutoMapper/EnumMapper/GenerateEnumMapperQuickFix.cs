@@ -11,9 +11,8 @@ using JetBrains.ReSharper.Psi.Tree;
 using JetBrains.ReSharper.Psi.Util;
 using JetBrains.TextControl;
 using JetBrains.Util;
-using ReSharperPlugin.NotAutoMapper.Mapping;
 
-namespace ReSharperPlugin.NotAutoMapper.Components.EnumMapper
+namespace ReSharperPlugin.NotAutoMapper.EnumMapper
 {
     public sealed class GenerateEnumMapperQuickFix : QuickFixBase
     {
@@ -27,12 +26,12 @@ namespace ReSharperPlugin.NotAutoMapper.Components.EnumMapper
         {
             _methodDeclaration = highlighting.Declaration;
             _parameter = _methodDeclaration.ParameterDeclarations[0];
-            _returnType = _methodDeclaration.DeclaredElement.ReturnType;
+            _returnType = _methodDeclaration.DeclaredElement!.ReturnType;
 
             _factory = CSharpElementFactory.GetInstance(_methodDeclaration);
         }
 
-        public override string Text => "Generate mapper";
+        public override string Text => "Generate enum mapper method";
 
         // Actual check is performed in ProblemAnalyzer
         public override bool IsAvailable(IUserDataHolder cache) => true;
@@ -72,8 +71,8 @@ namespace ReSharperPlugin.NotAutoMapper.Components.EnumMapper
             var throwExpression =
                 _factory.CreateThrowExpression("new $0(nameof($1), $1, null)", ofRangeException, _parameter.DeclaredElement);
 
+            var fieldsMapping = EnumMapper.Map(returnType, paramType);
             ISwitchExpressionArm prevArm = null;
-            var fieldsMapping = paramType.EnumMembers.MapOnto(returnType.EnumMembers);
             foreach (var (key, value) in fieldsMapping)
             {
                 var nextSwitchArm = _factory.CreateSwitchExpressionArm("$0 => $1", key, (object) value ?? throwExpression);

@@ -4,31 +4,28 @@ using System.Linq;
 using JetBrains.ReSharper.Psi;
 using JetBrains.Util;
 
-namespace ReSharperPlugin.NotAutoMapper.Mapping
+namespace ReSharperPlugin.NotAutoMapper.EnumMapper
 {
-    public static class FieldMapper
+    public static class EnumMapper
     {
-        public static Dictionary<ITypeMember, ITypeMember> MapOnto(
-            this IEnumerable<ITypeMember> fromFields,
-            IEnumerable<ITypeMember> toFields)
+        public static Dictionary<IField, IField> Map(IEnum resultEnum, IEnum fromEnum)
         {
-            var toFieldsDict = toFields.ToDictionary(x => x.ShortName.ToLower(), x => x);
-            var result = fromFields.ToDictionary(
+            var resultFieldsDict = resultEnum.EnumMembers.ToDictionary(x => x.ShortName.ToLower(), x => x);
+            var result = fromEnum.EnumMembers.ToDictionary(
                 x => x,
-                x => toFieldsDict.TryGetValue(x.ShortName.ToLower(), out var field)
+                x => resultFieldsDict.TryGetValue(x.ShortName.ToLower(), out var field)
                     ? field
-                    : ClosestOrDefault(toFieldsDict, x));
+                    : ClosestOrDefault(resultFieldsDict, x));
 
             return result;
         }
 
-        private static ITypeMember ClosestOrDefault(Dictionary<string, ITypeMember> fieldsDict, ITypeMember field)
+        private static IField ClosestOrDefault(Dictionary<string, IField> fieldsDict, IField field)
         {
             var fieldShortNameLower = field.ShortName.ToLower();
             var result = fieldsDict.TakeMin(pair => StringSimilarityMetric(pair.Key, fieldShortNameLower)).Value;
 
-
-            if (AreCloseEnough(result.ShortName.ToLower(), fieldShortNameLower))
+            if (result != null && AreCloseEnough(result.ShortName.ToLower(), fieldShortNameLower))
             {
                 return result;
             }
@@ -38,11 +35,6 @@ namespace ReSharperPlugin.NotAutoMapper.Mapping
 
         private static int StringSimilarityMetric(string s1, string s2)
         {
-            if (s1.Contains(s2) || s2.Contains(s1))
-            {
-                return 0;
-            }
-
             return Fastenshtein.Levenshtein.Distance(s1, s2) - Math.Abs(s1.Length - s2.Length);
         }
 

@@ -4,10 +4,14 @@ using JetBrains.ReSharper.Psi.CSharp;
 using JetBrains.ReSharper.Psi.CSharp.Tree;
 using JetBrains.ReSharper.Psi.Tree;
 
-namespace ReSharperPlugin.NotAutoMapper.Components.EnumMapper
+// ReSharper disable ArgumentsStyleLiteral
+// ReSharper disable ArgumentsStyleNamedExpression
+// ReSharper disable ArgumentsStyleOther
+
+namespace ReSharperPlugin.NotAutoMapper.EnumMapper
 {
     [RegisterConfigurableSeverity(
-        nameof(CanGenerateEnumMapperHighlighting),
+        ID: nameof(CanGenerateEnumMapperHighlighting),
         CompoundItemName: null,
         Group: HighlightingGroupIds.BestPractice,
         Title: Message,
@@ -21,8 +25,8 @@ namespace ReSharperPlugin.NotAutoMapper.Components.EnumMapper
         ToolTipFormatString = Message)]
     public class CanGenerateEnumMapperHighlighting : IHighlighting
     {
-        public const string Message = "Can generate enum mapper method";
-        
+        private const string Message = "Can generate enum mapper method";
+
         public string ToolTip => Message;
 
         public string ErrorStripeToolTip => "Generate enum mapper method";
