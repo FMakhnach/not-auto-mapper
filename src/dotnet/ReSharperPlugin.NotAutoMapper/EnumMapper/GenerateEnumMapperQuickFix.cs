@@ -3,6 +3,8 @@ using JetBrains.Annotations;
 using JetBrains.Application.Progress;
 using JetBrains.Collections;
 using JetBrains.ProjectModel;
+using JetBrains.ReSharper.Feature.Services.Bulbs;
+using JetBrains.ReSharper.Feature.Services.LiveTemplates.Hotspots;
 using JetBrains.ReSharper.Feature.Services.QuickFixes;
 using JetBrains.ReSharper.Psi;
 using JetBrains.ReSharper.Psi.CSharp;
@@ -38,59 +40,74 @@ namespace ReSharperPlugin.NotAutoMapper.EnumMapper
 
         protected override Action<ITextControl> ExecutePsiTransaction(ISolution solution, IProgressIndicator progress)
         {
-            var switchExpression = CreateSwitchExpressionForEnumTypes(_parameter.Type.GetEnumType(), _returnType.GetEnumType());
+            var hotspotsRegistry = new HotspotsRegistry(_methodDeclaration.GetPsiServices());
 
-            var block = WrapWithReturnMethodBlock(switchExpression);
+            var (returnStatement, switchExpression) = CreateReturnSwitchExpression();
 
-            _methodDeclaration.SetBody(block);
+            FillSwitchExpression(
+                switchExpression,
+                _parameter.Type.GetEnumType(),
+                _returnType.GetEnumType(),
+                hotspotsRegistry);
 
-            return null;
+            return BulbActionUtils.ExecuteHotspotSession(hotspotsRegistry, returnStatement.GetDocumentEndOffset());
         }
 
-        private ISwitchExpression CreateSwitchExpressionForEnumTypes(IEnum paramType, IEnum returnType)
+        private (IReturnStatement, ISwitchExpression) CreateReturnSwitchExpression()
         {
-            var switchExpression = CreateEmptySwitchExpression(_parameter.DeclaredElement);
+            var methodBody = _methodDeclaration.SetBody(_factory.CreateEmptyBlock());
 
-            FillSwitchExpression(switchExpression, paramType, returnType);
-
-            return switchExpression;
-        }
-
-        private ISwitchExpression CreateEmptySwitchExpression(IParameter governingParameter)
-        {
             var switchExpression = _factory.CreateEmptySwitchExpression();
+            var governingParameter = _parameter.DeclaredElement;
             var governingExpression = _factory.CreateExpression("$0", governingParameter);
             switchExpression.SetGoverningExpression(governingExpression);
+            var statement = _factory.CreateStatement("return $0;", switchExpression);
 
-            return switchExpression;
+            // Мудацкая система, в которой методы (SetBody, AddStatement) создают копии переданных объектов внутри
+            // вынуждает писать подобный кринж с вытаскиванием ISwitchExpression из жопы, вместо использования исходного объекта
+            var returnStatement = methodBody.AddStatementAfter(statement, null) as IReturnStatement;
+            var realSwitchExpression = returnStatement!.Value as ISwitchExpression;
+
+            return (returnStatement, realSwitchExpression);
         }
 
-        private void FillSwitchExpression(ISwitchExpression switchExpression, IEnum paramType, IEnum returnType)
+        private void FillSwitchExpression(
+            ISwitchExpression switchExpression,
+            IEnum paramType,
+            IEnum returnType,
+            HotspotsRegistry hotspotsRegistry)
         {
+            // Использую ArgumentOutOfRangeException для enum значений, для которых не нашлось совпадения + для discard ветки.
             var ofRangeException = switchExpression.GetPredefinedType().ArgumentOutOfRangeException;
             var throwExpression =
                 _factory.CreateThrowExpression("new $0(nameof($1), $1, null)", ofRangeException, _parameter.DeclaredElement);
 
-            var fieldsMapping = EnumMapper.Map(returnType, paramType);
+            var (mappedFields, notMappedFields) = EnumMapper.Map(returnType, paramType);
+
             ISwitchExpressionArm prevArm = null;
-            foreach (var (key, value) in fieldsMapping)
+
+            // Добавляю смапленные филды
+            foreach (var (from, to) in mappedFields)
             {
-                var nextSwitchArm = _factory.CreateSwitchExpressionArm("$0 => $1", key, (object) value ?? throwExpression);
+                var nextSwitchArm = _factory.CreateSwitchExpressionArm("$0 => $1", from, to);
                 prevArm = switchExpression.AddSwitchExpressionArmAfter(nextSwitchArm, prevArm);
             }
 
-            var lastSwitchArm = _factory.CreateSwitchExpressionArm("_ => $0", throwExpression);
-            switchExpression.AddSwitchExpressionArmAfter(lastSwitchArm, prevArm);
-        }
+            // После добавляю отображение несмапленных филдов на ArgumentOutOfRangeException
+            foreach (var field in notMappedFields)
+            {
+                var nextSwitchArm = _factory.CreateSwitchExpressionArm("$0 => $1", field, throwExpression);
+                prevArm = switchExpression.AddSwitchExpressionArmAfter(nextSwitchArm, prevArm);
+                // Эта штучка чтобы сразу можно было указать вручную что там должно быть
+                hotspotsRegistry.Register(
+                    new ITreeNode[]
+                    {
+                        prevArm.Expression
+                    });
+            }
 
-        private IBlock WrapWithReturnMethodBlock(IExpression expression)
-        {
-            var block = _factory.CreateEmptyBlock();
-
-            var statement = _factory.CreateStatement("return $0;", expression);
-            block.AddStatementAfter(statement, null);
-
-            return block;
+            var discardSwitchArm = _factory.CreateSwitchExpressionArm("_ => $0", throwExpression);
+            switchExpression.AddSwitchExpressionArmAfter(discardSwitchArm, prevArm);
         }
     }
 }

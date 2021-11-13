@@ -1,150 +1,260 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
-using JetBrains.Platform.MsBuildTask.Utils;
+using JetBrains.ProjectModel;
+using JetBrains.ReSharper.Feature.Services.Occurrences;
+using JetBrains.ReSharper.Features.Navigation.Core.Search.SearchRequests;
 using JetBrains.ReSharper.Psi;
+using JetBrains.ReSharper.Psi.CSharp.Conversions;
 using JetBrains.ReSharper.Psi.CSharp.Tree;
-using JetBrains.ReSharper.Psi.ExtensionsAPI.Caches2.ExtensionMethods.Queries;
+using JetBrains.ReSharper.Psi.Modules;
 using JetBrains.ReSharper.Psi.Tree;
 using JetBrains.ReSharper.Psi.Util;
+using JetBrains.ReSharper.TestRunner.Abstractions.Extensions;
 
 namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
 {
-    public static class ObjectMapper
+    public class ObjectMapper
     {
-        public static Dictionary<IProperty, string> MapProperties(
-            this ITypeElement resultType,
+        private readonly ISolution _solution;
+        private readonly IPsiModule _psiModule;
+
+        public ObjectMapper(ISolution solution, IPsiModule psiModule)
+        {
+            _solution = solution;
+            _psiModule = psiModule;
+        }
+
+        public IDictionary<IProperty, string> MapProperties(
+            ITypeElement resultType,
             TreeNodeCollection<ICSharpParameterDeclaration> parameters)
         {
-            var result = resultType.Properties.ToDictionary(x => x, x => (string) null);
+            const int searchDepth = 3;
 
             var properties =
                 parameters
-                    .Select(p => new Candidate(p.Type, p.DeclaredName.ToLower(), p.DeclaredName))
-                    .ToArray();
+                    .Select(p => new PropertyInfo(p.Type, p.DeclaredName, Array.Empty<string>()))
+                    .ToList();
 
-            FindMatches(result, properties, depth: 2);
+            var result = FindMatches(resultType.Properties.ToArray(), properties, searchDepth);
 
             return result;
         }
 
-        private static void FindMatches(
-            Dictionary<IProperty, string> resultMap,
-            IReadOnlyCollection<Candidate> candidates,
+        private Dictionary<IProperty, string> FindMatches(
+            IReadOnlyCollection<IProperty> targetProperties,
+            List<PropertyInfo> candidates,
             int depth)
         {
-            var candidateNames = candidates.ToDictionary(x => x.RelativeName);
+            var result = targetProperties.ToDictionary(x => x, x => (string) null);
+            CollectDeeperCandidates(candidates, depth);
 
-            FindPerfectMatches(resultMap, candidates);
-            //FindConvertableMatches(mapping, fromPropertiesMap);
-
-            if (depth > 1 && resultMap.Count(x => x.Value is null) > 0)
+            foreach (var property in targetProperties)
             {
-                var nextLevelProperties =
-                    candidates.SelectMany(
-                            candidate =>
-                            {
-                                var propertyType = candidate.Type.GetTypeElement();
+                var foundPerfect = false;
+                var assignableProperties = new List<(PropertyInfo Property, PropertyComparisonResult ComparisonInfo)>();
 
-                                return propertyType is null
-                                    ? Array.Empty<Candidate>()
-                                    : propertyType.Properties.Select(
-                                        subProperty => new Candidate(
-                                            subProperty.Type,
-                                            candidate.RelativeName + subProperty.ShortName.ToLower(),
-                                            $"{candidate.Path}.{subProperty.ShortName}"));
-                            })
-                        .ToArray();
-
-                FindMatches(resultMap, nextLevelProperties, depth - 1);
-            }
-        }
-
-        private static void FindPerfectMatches(
-            Dictionary<IProperty, string> mapping,
-            Dictionary<string, Candidate> propertiesMap)
-        {
-            var notUsedProperties = mapping.Keys.Where(property => mapping[property] == null).ToList();
-
-            foreach (var targetProperty in notUsedProperties)
-            {
-                var perfectMatch = propertiesMap.TryGetValue(targetProperty.ShortName.ToLower(), out var candidate)
-                                   && candidate.Type != null
-                                   && candidate.Type.IsSubtypeOf(targetProperty.Type);
-
-                if (perfectMatch)
+                foreach (var candidate in candidates)
                 {
-                    mapping[targetProperty] = candidate.Path;
-                }
-            }
-        }
+                    var comparisonResult = candidate.CompareTo(property, _solution, _psiModule);
 
-        private static void FindConvertableMatches(
-            Dictionary<IProperty, string> mapping,
-            Dictionary<string, Candidate> propertiesMap)
-        {
-            var notUsedProperties = mapping.Keys.Where(property => mapping[property] == null).ToList();
-
-            foreach (var targetProperty in notUsedProperties)
-            {
-                var perfectMatch = propertiesMap.TryGetValue(targetProperty.ShortName, out var candidate);
-
-                if (perfectMatch)
-                {
-                    var ext =
-                        GetExtensionMethods(typeof(object).GetAssembly(), candidate.Type.GetType())
-                            .Where(x => x.ReturnType == targetProperty.Type.GetType());
-
-                    var meth = ext.FirstOrDefault();
-
-                    if (meth != null)
+                    if (comparisonResult.IsAssignable || comparisonResult.ExtensionConversionMethods?.Count > 0)
                     {
-                        mapping[targetProperty] = candidate.Path + meth.Name + "()";
+                        if (comparisonResult.NamesMatch)
+                        {
+                            foundPerfect = true;
+                            result[property] = candidate.GetPath();
+                            if (comparisonResult.ExtensionConversionMethods?.Count > 0)
+                            {
+                                // TODO: change extension method choice logic
+                                result[property] += "." + comparisonResult.ExtensionConversionMethods.First().ShortName + "()";
+                            }
+
+                            break;
+                        }
+
+                        if (comparisonResult.AreNamesSimilar)
+                        {
+                            assignableProperties.Add((candidate, comparisonResult));
+                        }
                     }
                 }
 
-                ExtensionMethodsQuery kek;
+                if (!foundPerfect && assignableProperties.Count > 0)
+                {
+                    var (propertyInfo, comparisonInfo) = assignableProperties
+                        .OrderBy(x => x.ComparisonInfo.NamesLevenshteinDistance)
+                        .FirstOrDefault();
+
+                    var propertyPath = propertyInfo.GetPath();
+                    if (comparisonInfo.ExtensionConversionMethods?.Count > 0)
+                    {
+                        // TODO: change extension method choice logic
+                        propertyPath += "." + comparisonInfo.ExtensionConversionMethods.First().ShortName + "()";
+                    }
+
+                    result[property] = propertyPath;
+                }
+            }
+
+            return result;
+        }
+
+        private void CollectDeeperCandidates(List<PropertyInfo> candidates, int depth)
+        {
+            var prevLevelCandidates = candidates;
+            for (int i = 0; i < depth; i++)
+            {
+                var nextLevelProperties = prevLevelCandidates
+                    .Where(x => x.Type.GetTypeElement() != null)
+                    .SelectMany(candidate =>
+                        candidate.Type.GetTypeElement()!.Properties
+                            .Select(subProperty => new PropertyInfo(subProperty, candidate)))
+                    .ToList();
+
+                candidates.AddRange(nextLevelProperties);
+                prevLevelCandidates = nextLevelProperties;
             }
         }
 
-        private static IEnumerable<MethodInfo> GetExtensionMethods(
-            Assembly assembly,
-            Type extendedType)
+        private class PropertyInfo
         {
-            var query = from type in assembly.GetTypes()
-                where type.IsSealed && !type.IsGenericType && !type.IsNested
-                from method in type.GetMethods(
-                    BindingFlags.Static
-                    | BindingFlags.Public
-                    | BindingFlags.NonPublic)
-                where method.IsDefined(typeof(ExtensionAttribute), false)
-                where method.GetParameters()[0].ParameterType == extendedType
-                select method;
+            [NotNull]
+            public IType Type { get; }
 
-            return query;
-        }
+            [NotNull]
+            private string Name { get; }
 
-        private class Candidate
-        {
-            public Candidate([NotNull] IType type, [NotNull] string relativeName, [NotNull] string path)
+            [NotNull]
+            private IReadOnlyCollection<string> Path { get; }
+
+            public PropertyInfo([NotNull] IType type, [NotNull] string name, [NotNull] IReadOnlyCollection<string> path)
             {
                 Type = type;
-                RelativeName = relativeName;
+                Name = name;
                 Path = path;
             }
 
-            [CanBeNull] public IType Type { get; }
+            public PropertyInfo([NotNull] IProperty property, [NotNull] PropertyInfo parent)
+            {
+                Type = property.Type;
+                Name = property.ShortName;
+                var path = new List<string>(parent.Path) {parent.Name};
+                Path = path;
+            }
+
+            public string GetPath()
+            {
+                return string.Join("", Path.Select(x => x + ".")) + Name;
+            }
+
+            public PropertyComparisonResult CompareTo(IProperty target, ISolution solution, IPsiModule psiModule)
+            {
+                var targetNameLower = target.ShortName.ToLower();
+
+                var namesMatch = false;
+                var namesCloseEnough = false;
+                var bestLevenshteinDistance = int.MaxValue;
+                foreach (var name in GetPossibleNamesLower())
+                {
+                    if (name == targetNameLower)
+                    {
+                        namesMatch = true;
+                        bestLevenshteinDistance = 0;
+                    }
+
+                    bestLevenshteinDistance = Math.Min(bestLevenshteinDistance, Fastenshtein.Levenshtein.Distance(name, targetNameLower));
+                    namesCloseEnough |= AreCloseEnough(name, targetNameLower);
+                }
+
+                var isAssignable = Type.IsSubtypeOf(target.Type)
+                                   || psiModule.GetTypeConversionRule().IsImplicitlyConvertibleTo(Type, target.Type);
+
+                IReadOnlyCollection<IMethod> extensionConversionMethods = null;
+                if (!isAssignable && namesCloseEnough)
+                {
+                    var extensionMethodsSearchRequest = new ExtensionMethodsSearchRequest(
+                        Type,
+                        solution,
+                        null,
+                        target.PresentationLanguage,
+                        psiModule
+                    );
+                    var occurrences = extensionMethodsSearchRequest.Search() ?? Array.Empty<IOccurrence>();
+
+                    var kek = occurrences
+                        .Select(x => x.As<DeclaredElementOccurrence>().DisplayElement.GetValidDeclaredElement().As<IMethod>());
+
+                    extensionConversionMethods = kek
+                        .Where(x => target.Type.IsSubtypeOf(x.ReturnType)
+                                    || psiModule.GetTypeConversionRule().IsImplicitlyConvertibleTo(target.Type, x.ReturnType))
+                        .ToArray();
+                }
+
+                return new PropertyComparisonResult
+                {
+                    NamesMatch = namesMatch,
+                    NamesLevenshteinDistance = bestLevenshteinDistance,
+                    AreNamesSimilar = namesCloseEnough,
+                    IsAssignable = isAssignable,
+                    ExtensionConversionMethods = extensionConversionMethods
+                };
+            }
+
+            private IEnumerable<string> GetPossibleNamesLower()
+            {
+                var name = Name.ToLower();
+                yield return name;
+
+                foreach (var part in Path.Reverse())
+                {
+                    name = part.ToLower() + name;
+                    yield return name;
+                }
+            }
 
             /// <summary>
-            /// Lower case concatenation of path elements
+            /// Whether we accept given strings as similar enough to map one onto other (heuristic).
             /// </summary>
-            [NotNull]
-            public string RelativeName { get; }
+            private bool AreCloseEnough(string s1, string s2)
+            {
+                var distance = Fastenshtein.Levenshtein.Distance(s1, s2);
 
-            [NotNull] public string Path { get; }
+                const double minLengthCriticalPercent = 0.5;
+
+                return distance <= Math.Min(s1.Length, s2.Length) * minLengthCriticalPercent;
+            }
+        }
+
+        private class PropertyComparisonResult
+        {
+            /// <summary>
+            /// Are names equal (case ignored)
+            /// </summary>
+            public bool NamesMatch { get; set; }
+
+            /// <summary>
+            /// Levenshtein distance between property names
+            /// </summary>
+            public int NamesLevenshteinDistance { get; set; }
+
+            /// <summary>
+            /// Should names considered similar
+            /// </summary>
+            public bool AreNamesSimilar { get; set; }
+
+            /// <summary>
+            /// Candidate can be assigned to target
+            /// </summary>
+            public bool IsAssignable { get; set; }
+
+            /// <summary>
+            /// Extension methods for convertation, if needed (and exist)
+            /// </summary>
+            [CanBeNull]
+            public IReadOnlyCollection<IMethod> ExtensionConversionMethods { get; set; }
         }
     }
 }

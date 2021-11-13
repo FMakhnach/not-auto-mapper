@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using JetBrains.Annotations;
 using JetBrains.Application.Progress;
 using JetBrains.Collections;
@@ -46,18 +47,18 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
         {
             var hotspotsRegistry = new HotspotsRegistry(_methodDeclaration.GetPsiServices());
 
-            var returnStatement = CreateReturnConstructorWithInitializer(out var objectInitializer);
+            var (returnStatement, objectInitializer) = CreateReturnConstructorWithInitializer();
 
-            FillInitializer(objectInitializer, hotspotsRegistry);
+            var objectMapper = new ObjectMapper(solution, returnStatement.GetPsiModule());
+
+            FillInitializer(objectInitializer, objectMapper, hotspotsRegistry);
 
             objectInitializer.FormatNode(CodeFormatProfile.SPACIOUS, NullProgressIndicator.Create());
 
             return BulbActionUtils.ExecuteHotspotSession(hotspotsRegistry, returnStatement.GetDocumentEndOffset());
         }
 
-        // какого хуя ебучие сеттеры создают копии внутри?
-        // приходится инициалайзер через жопу вытаскивать, а не использовать созданный
-        private IReturnStatement CreateReturnConstructorWithInitializer(out IObjectInitializer objectInitializer)
+        private (IReturnStatement, IObjectInitializer) CreateReturnConstructorWithInitializer()
         {
             var methodBody = _methodDeclaration.SetBody(_factory.CreateEmptyBlock());
 
@@ -65,19 +66,19 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
             constructorExpression!.SetInitializer(_factory.CreateObjectInitializer());
             var statement = _factory.CreateStatement("return $0;", constructorExpression);
 
+            // I don't like what I'm doing
             var returnStatement = methodBody.AddStatementAfter(statement, null) as IReturnStatement;
-
             var objectExpression = returnStatement!.Value as IObjectCreationExpression;
-            objectInitializer = objectExpression!.Initializer as IObjectInitializer;
+            var objectInitializer = objectExpression!.Initializer as IObjectInitializer;
 
-            return returnStatement;
+            return (returnStatement, objectInitializer);
         }
 
-        private void FillInitializer(IObjectInitializer initializer, HotspotsRegistry hotspotsRegistry)
+        private void FillInitializer(IObjectInitializer initializer, ObjectMapper objectMapper, HotspotsRegistry hotspotsRegistry)
         {
-            var mapping = 
-                _returnType.GetTypeElement()
-                .MapProperties(_parameters);
+            var returnType = _returnType.GetTypeElement();
+
+            var mapping = objectMapper.MapProperties(returnType, _parameters);
 
             IMemberInitializer memberInitializer = null;
 
@@ -86,14 +87,14 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
                 var defaultExpression = CSharpDefaultValueUtil.GetDefaultValue(property.Type, initializer, true);
 
                 var expression = value is null
-                    ? null
+                    ? defaultExpression
                     : _factory.CreateExpression("$0", value);
 
-                var propertyInitializer = _factory.CreateObjectPropertyInitializer(property.ShortName, expression ?? defaultExpression);
+                var propertyInitializer = _factory.CreateObjectPropertyInitializer(property.ShortName, expression);
 
                 memberInitializer = initializer.AddMemberInitializerAfter(propertyInitializer, memberInitializer);
 
-                if (expression is null)
+                if (value is null)
                 {
                     hotspotsRegistry.Register(
                         new ITreeNode[]

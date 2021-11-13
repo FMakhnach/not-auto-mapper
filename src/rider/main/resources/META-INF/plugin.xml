@@ -1,25 +1,19 @@
 <idea-plugin require-restart="true">
-  <id>com.jetbrains.rider.plugins.notautomapper</id>
-  <name>NotAutoMapper</name>
-  <version>_PLACEHOLDER_</version>
-  <vendor url="https://project-url">Author</vendor>
-  <idea-version since-build="_PLACEHOLDER_" until-build="_PLACEHOLDER_" />
-  <depends>com.intellij.modules.rider</depends>
+    <id>com.jetbrains.rider.plugins.notautomapper</id>
+    <name>NotAutoMapper</name>
+    <version>0.1</version>
+    <vendor url="https://github.com/FMakhnach">Fedor Makhnach</vendor>
+    <idea-version since-build="212.4746" until-build="212.*"/>
+    <depends>com.intellij.modules.rider</depends>
 
-  <description>
-<![CDATA[
-<p>Sample description</p>
+    <description>
+        <![CDATA[
+<p>
+Simple tool for generating boilerplate extension methods to map enums and entities.
+</p>
 ]]>
-  </description>
+    </description>
 
-  <extensions defaultExtensionNs="com.intellij">
-    <applicationConfigurable groupId="language" instance="com.jetbrains.rider.plugins.notautomapper.SampleOptionsPage" id="SampleOptionsPage" />
-  </extensions>
-
-  <actions>
-    <action id="SampleAction" class="com.jetbrains.rider.plugins.notautomapper.SampleAction"
-            text="Do Something" description="Do Something Description">
-    </action>
-  </actions>
+    <change-notes>INIT: First versions of enum and object mappers.</change-notes>
 
 </idea-plugin>
