@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using JetBrains.Annotations;
 using JetBrains.ProjectModel;
@@ -13,6 +12,7 @@ using JetBrains.ReSharper.Psi.Modules;
 using JetBrains.ReSharper.Psi.Tree;
 using JetBrains.ReSharper.Psi.Util;
 using JetBrains.ReSharper.TestRunner.Abstractions.Extensions;
+using ReSharperPlugin.NotAutoMapper.Common;
 
 namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
 {
@@ -48,8 +48,8 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
             List<PropertyInfo> candidates,
             int depth)
         {
-            var result = targetProperties.ToDictionary(x => x, x => (string) null);
-            CollectDeeperCandidates(candidates, depth);
+            var result = targetProperties.ToDictionary(x => x, x => (string)null);
+            candidates = CollectDeeperCandidates(candidates, depth);
 
             foreach (var property in targetProperties)
             {
@@ -86,7 +86,7 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
                 {
                     var (propertyInfo, comparisonInfo) = assignableProperties
                         .OrderBy(x => x.ComparisonInfo.NamesLevenshteinDistance)
-                        .FirstOrDefault();
+                        .First();
 
                     var propertyPath = propertyInfo.GetPath();
                     if (comparisonInfo.ExtensionConversionMethods?.Count > 0)
@@ -102,21 +102,24 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
             return result;
         }
 
-        private void CollectDeeperCandidates(List<PropertyInfo> candidates, int depth)
+        private static List<PropertyInfo> CollectDeeperCandidates(List<PropertyInfo> candidates, int depth)
         {
+            var result = new List<PropertyInfo>(candidates);
             var prevLevelCandidates = candidates;
+
             for (int i = 0; i < depth; i++)
             {
                 var nextLevelProperties = prevLevelCandidates
-                    .Where(x => x.Type.GetTypeElement() != null)
-                    .SelectMany(candidate =>
-                        candidate.Type.GetTypeElement()!.Properties
-                            .Select(subProperty => new PropertyInfo(subProperty, candidate)))
+                    .SelectMany(candidate => candidate.Type
+                        .CollectAllInitializableProperties()
+                        .Select(subProperty => new PropertyInfo(subProperty, candidate)))
                     .ToList();
 
-                candidates.AddRange(nextLevelProperties);
+                result.AddRange(nextLevelProperties);
                 prevLevelCandidates = nextLevelProperties;
             }
+
+            return result;
         }
 
         private class PropertyInfo
@@ -141,7 +144,7 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
             {
                 Type = property.Type;
                 Name = property.ShortName;
-                var path = new List<string>(parent.Path) {parent.Name};
+                var path = new List<string>(parent.Path) { parent.Name };
                 Path = path;
             }
 

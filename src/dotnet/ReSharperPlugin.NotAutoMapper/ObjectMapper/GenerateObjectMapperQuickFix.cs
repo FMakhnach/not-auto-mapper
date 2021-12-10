@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using JetBrains.Annotations;
 using JetBrains.Application.Progress;
 using JetBrains.Collections;

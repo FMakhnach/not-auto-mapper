@@ -9,7 +9,7 @@ namespace ReSharperPlugin.NotAutoMapper.Common
 {
     [ElementProblemAnalyzer(
         typeof(IMethodDeclaration),
-        HighlightingTypes = new[] {typeof(CanGenerateEnumMapperHighlighting)})]
+        HighlightingTypes = new[] { typeof(CanGenerateEnumMapperHighlighting) })]
     public class CanGenerateMapperProblemAnalyzer : ElementProblemAnalyzer<IMethodDeclaration>
     {
         protected override void Run(
@@ -17,6 +17,8 @@ namespace ReSharperPlugin.NotAutoMapper.Common
             ElementProblemAnalyzerData data,
             IHighlightingConsumer consumer)
         {
+            // TODO: check if mapping is relevant (maybe some metric of property similarity, idk)
+            // Because now highlighting appears on all extension methods, which is weird
             if (CanGenerateMapperMethod(element))
             {
                 if (CanGenerateEnumMapperMethod(element))
