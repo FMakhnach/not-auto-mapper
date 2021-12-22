@@ -28,7 +28,7 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
         }
 
         public IDictionary<IProperty, string> MapProperties(
-            ITypeElement resultType,
+            [NotNull] ITypeElement resultType,
             TreeNodeCollection<ICSharpParameterDeclaration> parameters)
         {
             const int searchDepth = 3;
@@ -38,7 +38,9 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
                     .Select(p => new PropertyInfo(p.Type, p.DeclaredName, Array.Empty<string>()))
                     .ToList();
 
-            var result = FindMatches(resultType.Properties.ToArray(), properties, searchDepth);
+            var allInitializableProperties = resultType.CollectAllInitializableProperties().ToArray();
+
+            var result = FindMatches(allInitializableProperties, properties, searchDepth);
 
             return result;
         }
@@ -110,8 +112,8 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
             for (int i = 0; i < depth; i++)
             {
                 var nextLevelProperties = prevLevelCandidates
-                    .SelectMany(candidate => candidate.Type
-                        .CollectAllInitializableProperties()
+                    .SelectMany(candidate => candidate.Type.GetTypeElement()?
+                        .CollectAllReadableProperties()
                         .Select(subProperty => new PropertyInfo(subProperty, candidate)))
                     .ToList();
 
