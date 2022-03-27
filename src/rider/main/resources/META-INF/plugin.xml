@@ -1,9 +1,9 @@
-<idea-plugin require-restart="true">
+<idea-plugin require-restart="false">
     <id>com.jetbrains.rider.plugins.notautomapper</id>
     <name>NotAutoMapper</name>
-    <version>0.3</version>
+    <version>1.0</version>
     <vendor url="https://github.com/FMakhnach">Fedor Makhnach</vendor>
-    <idea-version since-build="212.4746" until-build="212.*"/>
+    <idea-version since-build="212.4746"/>
     <depends>com.intellij.modules.rider</depends>
 
     <description>
@@ -18,12 +18,15 @@ Simple tool for generating boilerplate extension methods to map enums and entiti
         INIT: First versions of enum and object mappers.
 
         v0.2: 
-        - Fix not using inherited properties;
-        - Fix trying to initialize not settable properties.
+        - Fixed: not using inherited properties;
+        - Fixed: trying to initialize not settable properties.
 
         v0.3: 
-        - Fix not _setting_ inherited properties;
-        - Fix trying to use not public properties (for now I'll just stick to just public ones).
+        - Fixed: not _setting_ inherited properties;
+        - Fixed: trying to use not public properties (for now I'll just stick to just public ones).
+        
+        v1.0
+        - Nothing really changed, I just updated configs. I think it's pretty ok-ish now. At least for me.
     </change-notes>
 
 </idea-plugin>

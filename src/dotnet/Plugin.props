@@ -4,9 +4,15 @@
     <SdkVersion>2021.2.0</SdkVersion>
 
     <Title>NotAutoMapper</Title>
-    <Description>Description</Description>
+    <Description>
+      <![CDATA[
+<p>
+Simple tool for generating boilerplate extension methods to map enums and entities.
+</p>
+]]>
+    </Description>
 
-    <Authors>Author</Authors>
+    <Authors>Fedor Makhnach</Authors>
     <Copyright>Copyright $([System.DateTime]::Now.Year) Maintainers of NotAutoMapper</Copyright>
     <PackageTags>resharper plugin</PackageTags>
 
