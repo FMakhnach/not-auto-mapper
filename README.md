@@ -6,6 +6,10 @@
 Plugin allows to generate boilerplate code for extension methods to map one object onto another.
 
 ## Example with enum
+Actually it's now not a light bulb, but a hammer (and no highlighting). I'm too lazy to remake this images.
+
 ![img.png](./resources/images/enum_example.png)
 ## Example with object
+Actually it's now not a light bulb, but a hammer (and no highlighting). I'm too lazy to remake this images.
+
 ![img.png](./resources/images/object_example.png)

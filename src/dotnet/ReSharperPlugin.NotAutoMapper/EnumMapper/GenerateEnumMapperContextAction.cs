@@ -1,11 +1,11 @@
 using System;
-using JetBrains.Annotations;
 using JetBrains.Application.Progress;
 using JetBrains.Collections;
 using JetBrains.ProjectModel;
 using JetBrains.ReSharper.Feature.Services.Bulbs;
+using JetBrains.ReSharper.Feature.Services.ContextActions;
+using JetBrains.ReSharper.Feature.Services.CSharp.ContextActions;
 using JetBrains.ReSharper.Feature.Services.LiveTemplates.Hotspots;
-using JetBrains.ReSharper.Feature.Services.QuickFixes;
 using JetBrains.ReSharper.Psi;
 using JetBrains.ReSharper.Psi.CSharp;
 using JetBrains.ReSharper.Psi.CSharp.Tree;
@@ -13,33 +13,46 @@ using JetBrains.ReSharper.Psi.Tree;
 using JetBrains.ReSharper.Psi.Util;
 using JetBrains.TextControl;
 using JetBrains.Util;
+using ReSharperPlugin.NotAutoMapper.Common;
 
 namespace ReSharperPlugin.NotAutoMapper.EnumMapper
 {
-    public sealed class GenerateEnumMapperQuickFix : QuickFixBase
+    [ContextAction(
+        Group = "C#",
+        Name = nameof(GenerateEnumMapperContextAction),
+        Description = "Generate enum mapper")]
+    public sealed class GenerateEnumMapperContextAction : ContextActionBase
     {
-        [NotNull] private readonly IMethodDeclaration _methodDeclaration;
-        private readonly ICSharpParameterDeclaration _parameter;
-        private readonly IType _returnType;
+        private readonly ICSharpContextActionDataProvider _dataProvider;
 
-        private readonly CSharpElementFactory _factory;
+        private IMethodDeclaration _methodDeclaration;
+        private ICSharpParameterDeclaration _parameter;
+        private IType _returnType;
+        private CSharpElementFactory _factory;
 
-        public GenerateEnumMapperQuickFix(CanGenerateEnumMapperHighlighting highlighting)
+        public override string Text => "Generate enum mapper method";
+
+        public GenerateEnumMapperContextAction(ICSharpContextActionDataProvider dataProvider)
         {
-            _methodDeclaration = highlighting.Declaration;
+            _dataProvider = dataProvider;
+        }
+
+        // Actual check is performed in ProblemAnalyzer
+        public override bool IsAvailable(IUserDataHolder cache)
+        {
+            _methodDeclaration = _dataProvider.GetSelectedElement<IMethodDeclaration>();
+
+            return MapperAnalyzer.CanGenerateEnumMapperMethod(_methodDeclaration);
+        }
+
+        protected override Action<ITextControl> ExecutePsiTransaction(ISolution solution, IProgressIndicator progress)
+        {
+            _methodDeclaration = _dataProvider.GetSelectedElement<IMethodDeclaration>()!;
             _parameter = _methodDeclaration.ParameterDeclarations[0];
             _returnType = _methodDeclaration.DeclaredElement!.ReturnType;
 
             _factory = CSharpElementFactory.GetInstance(_methodDeclaration);
-        }
 
-        public override string Text => "Generate enum mapper method";
-
-        // Actual check is performed in ProblemAnalyzer
-        public override bool IsAvailable(IUserDataHolder cache) => true;
-
-        protected override Action<ITextControl> ExecutePsiTransaction(ISolution solution, IProgressIndicator progress)
-        {
             var hotspotsRegistry = new HotspotsRegistry(_methodDeclaration.GetPsiServices());
 
             var (returnStatement, switchExpression) = CreateReturnSwitchExpression();

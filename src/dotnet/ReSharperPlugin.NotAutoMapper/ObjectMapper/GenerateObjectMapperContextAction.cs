@@ -1,12 +1,12 @@
 using System;
-using JetBrains.Annotations;
 using JetBrains.Application.Progress;
 using JetBrains.Collections;
 using JetBrains.ProjectModel;
 using JetBrains.ReSharper.Feature.Services.Bulbs;
+using JetBrains.ReSharper.Feature.Services.ContextActions;
+using JetBrains.ReSharper.Feature.Services.CSharp.ContextActions;
 using JetBrains.ReSharper.Feature.Services.CSharp.Util;
 using JetBrains.ReSharper.Feature.Services.LiveTemplates.Hotspots;
-using JetBrains.ReSharper.Feature.Services.QuickFixes;
 using JetBrains.ReSharper.Psi;
 using JetBrains.ReSharper.Psi.CodeStyle;
 using JetBrains.ReSharper.Psi.CSharp;
@@ -15,35 +15,45 @@ using JetBrains.ReSharper.Psi.Tree;
 using JetBrains.ReSharper.Psi.Util;
 using JetBrains.TextControl;
 using JetBrains.Util;
+using ReSharperPlugin.NotAutoMapper.Common;
 
 namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
 {
-    public sealed class GenerateObjectMapperQuickFix : QuickFixBase
+    [ContextAction(
+        Group = "C#",
+        Name = nameof(GenerateObjectMapperContextAction),
+        Description = "Generate object mapper")]
+    public sealed class GenerateObjectMapperContextAction : ContextActionBase
     {
-        [NotNull] private readonly IMethodDeclaration _methodDeclaration;
+        private readonly ICSharpContextActionDataProvider _dataProvider;
 
-        private readonly TreeNodeCollection<ICSharpParameterDeclaration> _parameters;
-        private readonly IType _returnType;
-
-        private readonly CSharpElementFactory _factory;
-
-        public GenerateObjectMapperQuickFix(CanGenerateObjectMapperHighlighting highlighting)
-        {
-            _methodDeclaration = highlighting.Declaration;
-            _parameters = _methodDeclaration.ParameterDeclarations;
-            _returnType = _methodDeclaration.DeclaredElement!.ReturnType;
-
-            _factory = CSharpElementFactory.GetInstance(_methodDeclaration);
-        }
+        private IMethodDeclaration _methodDeclaration;
+        private TreeNodeCollection<ICSharpParameterDeclaration> _parameters;
+        private IType _returnType;
+        private CSharpElementFactory _factory;
 
         public override string Text => "Generate object mapper method";
 
+        public GenerateObjectMapperContextAction(ICSharpContextActionDataProvider dataProvider)
+        {
+            _dataProvider = dataProvider;
+        }
+
         // Actual check is performed in ProblemAnalyzer
         public override bool IsAvailable(IUserDataHolder cache)
-            => true;
+        {
+            _methodDeclaration = _dataProvider.GetSelectedElement<IMethodDeclaration>();
+
+            return MapperAnalyzer.CanGenerateObjectMapperMethod(_methodDeclaration);
+        }
 
         protected override Action<ITextControl> ExecutePsiTransaction(ISolution solution, IProgressIndicator progress)
         {
+            _methodDeclaration = _dataProvider.GetSelectedElement<IMethodDeclaration>()!;
+            _parameters = _methodDeclaration.ParameterDeclarations;
+            _returnType = _methodDeclaration.DeclaredElement!.ReturnType;
+            _factory = CSharpElementFactory.GetInstance(_methodDeclaration);
+
             var hotspotsRegistry = new HotspotsRegistry(_methodDeclaration.GetPsiServices());
 
             var (returnStatement, objectInitializer) = CreateReturnConstructorWithInitializer();
@@ -75,7 +85,7 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
 
         private void FillInitializer(IObjectInitializer initializer, ObjectMapper objectMapper, HotspotsRegistry hotspotsRegistry)
         {
-            var returnType = _returnType.GetTypeElement();
+            var returnType = _returnType.GetTypeElement()!;
 
             var mapping = objectMapper.MapProperties(returnType, _parameters);
 
