@@ -19,7 +19,7 @@
   <Import Project="Plugin.props" />
 
   <PropertyGroup>
-    <WaveVersionBase>$(SdkVersion.Substring(2,2))$(SdkVersion.Substring(5,1))</WaveVersionBase>
+    <WaveVersion>$(SdkVersion.Substring(2,2))$(SdkVersion.Substring(5,1)).0.0</WaveVersion>
   </PropertyGroup>
 
   <ItemGroup>
