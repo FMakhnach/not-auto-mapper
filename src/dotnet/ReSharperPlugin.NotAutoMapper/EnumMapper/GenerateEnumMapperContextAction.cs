@@ -37,7 +37,6 @@ namespace ReSharperPlugin.NotAutoMapper.EnumMapper
             _dataProvider = dataProvider;
         }
 
-        // Actual check is performed in ProblemAnalyzer
         public override bool IsAvailable(IUserDataHolder cache)
         {
             _methodDeclaration = _dataProvider.GetSelectedElement<IMethodDeclaration>();

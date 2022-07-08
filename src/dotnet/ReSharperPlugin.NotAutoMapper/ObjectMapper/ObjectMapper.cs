@@ -27,26 +27,33 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
             _psiModule = psiModule;
         }
 
-        public IDictionary<IProperty, string> MapProperties(
+        public IDictionary<ITypeOwner, string> MapProperties(
             [NotNull] ITypeElement resultType,
+            TreeNodeCollection<ICSharpParameterDeclaration> parameters)
+        {
+            var allInitializableProperties = resultType.CollectAllInitializableProperties().ToArray();
+
+            return MapParameters(allInitializableProperties, parameters);
+        }
+
+        public IDictionary<ITypeOwner, string> MapParameters(
+            [NotNull] IEnumerable<ITypeOwner> targetParameters,
             TreeNodeCollection<ICSharpParameterDeclaration> parameters)
         {
             const int searchDepth = 3;
 
             var properties =
                 parameters
-                    .Select(p => new PropertyInfo(p.Type, p.DeclaredName, Array.Empty<string>()))
-                    .ToList();
+                   .Select(p => new PropertyInfo(p.Type, p.DeclaredName, Array.Empty<string>()))
+                   .ToList();
 
-            var allInitializableProperties = resultType.CollectAllInitializableProperties().ToArray();
-
-            var result = FindMatches(allInitializableProperties, properties, searchDepth);
+            var result = FindMatches(targetParameters.ToArray(), properties, searchDepth);
 
             return result;
         }
 
-        private Dictionary<IProperty, string> FindMatches(
-            IReadOnlyCollection<IProperty> targetProperties,
+        private Dictionary<ITypeOwner, string> FindMatches(
+            IReadOnlyCollection<ITypeOwner> targetProperties,
             List<PropertyInfo> candidates,
             int depth)
         {
@@ -68,6 +75,7 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
                         {
                             foundPerfect = true;
                             result[property] = candidate.GetPath();
+
                             if (comparisonResult.ExtensionConversionMethods?.Count > 0)
                             {
                                 // TODO: change extension method choice logic
@@ -87,10 +95,11 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
                 if (!foundPerfect && assignableProperties.Count > 0)
                 {
                     var (propertyInfo, comparisonInfo) = assignableProperties
-                        .OrderBy(x => x.ComparisonInfo.NamesLevenshteinDistance)
-                        .First();
+                       .OrderBy(x => x.ComparisonInfo.NamesLevenshteinDistance)
+                       .First();
 
                     var propertyPath = propertyInfo.GetPath();
+
                     if (comparisonInfo.ExtensionConversionMethods?.Count > 0)
                     {
                         // TODO: change extension method choice logic
@@ -112,10 +121,12 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
             for (int i = 0; i < depth; i++)
             {
                 var nextLevelProperties = prevLevelCandidates
-                    .SelectMany(candidate => candidate.Type.GetTypeElement()?
+                   .SelectMany(
+                        candidate => candidate.Type.GetTypeElement()
+                         ?
                         .CollectAllReadableProperties()
-                        .Select(subProperty => new PropertyInfo(subProperty, candidate)))
-                    .ToList();
+                           .Select(subProperty => new PropertyInfo(subProperty, candidate)))
+                   .ToList();
 
                 result.AddRange(nextLevelProperties);
                 prevLevelCandidates = nextLevelProperties;
@@ -142,7 +153,7 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
                 Path = path;
             }
 
-            public PropertyInfo([NotNull] IProperty property, [NotNull] PropertyInfo parent)
+            public PropertyInfo([NotNull] ITypeOwner property, [NotNull] PropertyInfo parent)
             {
                 Type = property.Type;
                 Name = property.ShortName;
@@ -155,13 +166,14 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
                 return string.Join("", Path.Select(x => x + ".")) + Name;
             }
 
-            public PropertyComparisonResult CompareTo(IProperty target, ISolution solution, IPsiModule psiModule)
+            public PropertyComparisonResult CompareTo(ITypeOwner target, ISolution solution, IPsiModule psiModule)
             {
                 var targetNameLower = target.ShortName.ToLower();
 
                 var namesMatch = false;
                 var namesCloseEnough = false;
                 var bestLevenshteinDistance = int.MaxValue;
+
                 foreach (var name in GetPossibleNamesLower())
                 {
                     if (name == targetNameLower)
@@ -178,6 +190,7 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
                                    || psiModule.GetTypeConversionRule().IsImplicitlyConvertibleTo(Type, target.Type);
 
                 IReadOnlyCollection<IMethod> extensionConversionMethods = null;
+
                 if (!isAssignable && namesCloseEnough)
                 {
                     var extensionMethodsSearchRequest = new ExtensionMethodsSearchRequest(
@@ -190,12 +203,13 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
                     var occurrences = extensionMethodsSearchRequest.Search() ?? Array.Empty<IOccurrence>();
 
                     var kek = occurrences
-                        .Select(x => x.As<DeclaredElementOccurrence>().DisplayElement.GetValidDeclaredElement().As<IMethod>());
+                       .Select(x => x.As<DeclaredElementOccurrence>().DisplayElement.GetValidDeclaredElement().As<IMethod>());
 
                     extensionConversionMethods = kek
-                        .Where(x => target.Type.IsSubtypeOf(x.ReturnType)
-                                    || psiModule.GetTypeConversionRule().IsImplicitlyConvertibleTo(target.Type, x.ReturnType))
-                        .ToArray();
+                       .Where(
+                            x => target.Type.IsSubtypeOf(x.ReturnType)
+                                 || psiModule.GetTypeConversionRule().IsImplicitlyConvertibleTo(target.Type, x.ReturnType))
+                       .ToArray();
                 }
 
                 return new PropertyComparisonResult
@@ -211,11 +225,13 @@ namespace ReSharperPlugin.NotAutoMapper.ObjectMapper
             private IEnumerable<string> GetPossibleNamesLower()
             {
                 var name = Name.ToLower();
+
                 yield return name;
 
                 foreach (var part in Path.Reverse())
                 {
                     name = part.ToLower() + name;
+
                     yield return name;
                 }
             }
